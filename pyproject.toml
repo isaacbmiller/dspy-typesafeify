@@ -46,6 +46,7 @@ langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
 litellm = ["litellm>=1.65.8"]
+typesafe = ["typesafe-sdk==0.6.0"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -73,7 +74,7 @@ test_extras = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dspy", "dspy.*"]
+include = ["dspy", "dspy.*", "typesafe_dspy", "typesafe_dspy.*"]
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
@@ -125,7 +126,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-include = ["dspy/**/*.py", "tests/**/*.py"]
+include = ["dspy/**/*.py", "examples/**/*.py", "tests/**/*.py", "typesafe_dspy/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
   "dspy/_vendor/**",  # vendored lm15, linted in its own repository
