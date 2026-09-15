@@ -66,10 +66,10 @@ OPENAI_MODEL=gpt-5.6-luna \
   --show-document
 ```
 
-Across the three observed cases, the decorated path averaged **1.890 seconds**
-versus **3.570 seconds** for plain DSPy: **47.1% faster**, or a projected
-**2m48s saved per 100 sequential calls**. Eleven of the twelve categorical
-typed decisions agreed; the one difference was an `owner_team` choice.
+Across the three observed cases, the decorated path averaged **1.958 seconds**
+versus **2.329 seconds** for plain DSPy: **15.9% faster**, or a projected
+**37.1 seconds saved per 100 sequential calls**. Average modeled cost fell from
+**$0.000377 to $0.000263 per ticket**, a **30.1% reduction**.
 
 ![Observed before-and-after benchmark for the Typesafe decorator](benchmark.svg)
 
@@ -78,10 +78,9 @@ million tokens** and [GPT-5.6 Luna at medium reasoning](https://developers.opena
 whose published rates are **$0.20 per million input tokens** and **$1.20 per
 million output tokens**. The Typesafe rate remains an explicitly supplied
 assumption until there is a public pricing source to link. Medium reasoning is
-Luna's default; its billed reasoning-token volume must come from the observed
-run rather than the unit-price table. Because this run did not report token
-counts, the figure compares normalized input-token rates and does not claim a
-dollar cost per call.
+Luna's default; its billed reasoning-token volume comes from the observed run
+rather than the unit-price table. The demo reports Luna and Typesafe token
+counts alongside total modeled cost for each path.
 
 ## Files
 
@@ -112,6 +111,7 @@ The script prints:
 - a side-by-side field delta table
 - wrapped freeform text outputs for both runs
 - per-case timing split and batch timing summary
+- per-case token usage and before/after cost totals
 
 ## Notes
 

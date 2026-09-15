@@ -78,14 +78,14 @@ OPENAI_MODEL=gpt-5.6-luna \
 
 The command prints the execution plan, exact signature-parity check, typed
 results and probabilities, field-by-field output differences, freeform text,
-and a timing breakdown for every case.
+timing, token usage, and total modeled cost for every case.
 
 ## Before/after benchmark
 
-Across the three observed cases, the decorated path averaged **1.890 seconds**
-versus **3.570 seconds** for plain DSPy: **47.1% faster**, or a projected
-**2m48s saved per 100 sequential calls**. Eleven of the twelve categorical
-typed decisions agreed; the one difference was an `owner_team` choice.
+Across the three observed cases, the decorated path averaged **1.958 seconds**
+versus **2.329 seconds** for plain DSPy: **15.9% faster**, or a projected
+**37.1 seconds saved per 100 sequential calls**. Average modeled cost fell from
+**$0.000377 to $0.000263 per ticket**, a **30.1% reduction**.
 
 The cost calculation will use these explicit inputs:
 
@@ -95,11 +95,10 @@ The cost calculation will use these explicit inputs:
 | GPT-5.6 Luna input tokens | $0.20 / 1M tokens | [Published OpenAI rate](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
 | GPT-5.6 Luna output and reasoning tokens | $1.20 / 1M tokens | [Published OpenAI rate](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
 
-The cost panel compares normalized input-token rates only: Typesafe's supplied
-rate is 79% lower than Luna's published input rate. The current demo output did
-not include token counts, so it would be misleading to claim a dollar cost per
-call or per 100 calls. That calculation remains pending measured input, output,
-and reasoning-token volumes.
+The modeled totals use every priced category in the table: Luna input,
+Luna output plus reasoning, and Typesafe input. Typesafe output-token usage is
+reported by the demo but is not assigned a cost because the supplied Typesafe
+rate covers input tokens only.
 
 ## Proof-of-concept layout
 

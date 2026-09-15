@@ -22,6 +22,11 @@ from typesafe_dspy import (
     typesafe_timings,
 )
 
+LUNA_MODEL = "gpt-5.6-luna"
+LUNA_INPUT_USD_PER_MILLION = 0.20
+LUNA_OUTPUT_USD_PER_MILLION = 1.20
+TYPESAFE_INPUT_USD_PER_MILLION = 0.042
+
 
 @dataclass(frozen=True)
 class CaseTiming:
@@ -29,6 +34,45 @@ class CaseTiming:
     typesafe_seconds: float
     hybrid_dspy_seconds: float
     hybrid_total_seconds: float
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class CaseCost:
+    baseline_luna: TokenUsage
+    typesafe: TokenUsage
+    hybrid_luna: TokenUsage
+
+    @property
+    def baseline_usd(self) -> float:
+        return _luna_cost(self.baseline_luna)
+
+    @property
+    def hybrid_usd(self) -> float:
+        return _luna_cost(self.hybrid_luna) + (
+            self.typesafe.input_tokens * TYPESAFE_INPUT_USD_PER_MILLION / 1_000_000
+        )
+
+
+class UsageRecordingTypesafeClient:
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self.last_usage = TokenUsage()
+
+    def system_one(self, *args, **kwargs):
+        response = self._client.system_one(*args, **kwargs)
+        if response.usage.input_tokens is None or response.usage.output_tokens is None:
+            raise RuntimeError("Typesafe did not report complete token usage; cannot calculate benchmark cost.")
+        self.last_usage = TokenUsage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+        return response
 
 
 def build_ticket_document(signature: type[dspy.Signature], inputs: dict) -> dict:
@@ -50,7 +94,7 @@ def build_ticket_document(signature: type[dspy.Signature], inputs: dict) -> dict
     }
 
 
-def configure_runtime() -> None:
+def configure_runtime() -> UsageRecordingTypesafeClient:
     from typesafe_sdk import TypeSafeClient
 
     openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -60,8 +104,12 @@ def configure_runtime() -> None:
     if not typesafe_api_key:
         raise RuntimeError("TYPESAFE_API_KEY must be set.")
 
-    openai_model = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+    openai_model = os.environ.get("OPENAI_MODEL", LUNA_MODEL)
     typesafe_model = os.environ.get("TYPESAFE_MODEL", "speed_latest")
+    if openai_model != LUNA_MODEL:
+        raise RuntimeError(
+            f"This fixed-price benchmark requires OPENAI_MODEL={LUNA_MODEL}; got {openai_model}."
+        )
 
     dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
     dspy.configure(
@@ -70,13 +118,15 @@ def configure_runtime() -> None:
             cache=False,
         ),
         callbacks=[],
-        track_usage=False,
+        track_usage=True,
     )
+    typesafe_client = UsageRecordingTypesafeClient(TypeSafeClient(api_key=typesafe_api_key))
     configure_typesafe(
-        client=TypeSafeClient(api_key=typesafe_api_key),
+        client=typesafe_client,
         model=typesafe_model,
         document_builder=build_ticket_document,
     )
+    return typesafe_client
 
 
 def signature_snapshot(signature: type[dspy.Signature]) -> dict[str, Any]:
@@ -169,6 +219,44 @@ def render_timing_line(timing: CaseTiming) -> str:
     )
 
 
+def prediction_usage(result) -> TokenUsage:
+    usage_by_model = result.get_lm_usage() or {}
+    if not usage_by_model or any(
+        "prompt_tokens" not in usage or "completion_tokens" not in usage for usage in usage_by_model.values()
+    ):
+        raise RuntimeError("Luna did not report complete token usage; cannot calculate benchmark cost.")
+    return TokenUsage(
+        input_tokens=sum(usage.get("prompt_tokens", 0) for usage in usage_by_model.values()),
+        output_tokens=sum(usage.get("completion_tokens", 0) for usage in usage_by_model.values()),
+    )
+
+
+def _luna_cost(usage: TokenUsage) -> float:
+    return (
+        usage.input_tokens * LUNA_INPUT_USD_PER_MILLION
+        + usage.output_tokens * LUNA_OUTPUT_USD_PER_MILLION
+    ) / 1_000_000
+
+
+def render_cost_line(cost: CaseCost) -> str:
+    savings = 0.0
+    if cost.baseline_usd > 0:
+        savings = 1.0 - (cost.hybrid_usd / cost.baseline_usd)
+    return "  ".join(
+        [
+            f"baseline_luna_input={cost.baseline_luna.input_tokens}",
+            f"baseline_luna_output={cost.baseline_luna.output_tokens}",
+            f"typesafe_input={cost.typesafe.input_tokens}",
+            f"typesafe_output={cost.typesafe.output_tokens}",
+            f"hybrid_luna_input={cost.hybrid_luna.input_tokens}",
+            f"hybrid_luna_output={cost.hybrid_luna.output_tokens}",
+            f"baseline_cost=${cost.baseline_usd:.6f}",
+            f"hybrid_cost=${cost.hybrid_usd:.6f}",
+            f"savings={savings:+.1%}",
+        ]
+    )
+
+
 def format_output_value(value: Any) -> str:
     if isinstance(value, float):
         return f"{value:.2f}"
@@ -204,7 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     cases = build_sample_cases()[: args.limit]
-    configure_runtime()
+    typesafe_client = configure_runtime()
 
     plan = plan_signature(TypesafeSupportTicketTriage)
     print("Signature plan")
@@ -229,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     baseline_predictor = dspy.Predict(BaselineSupportTicketTriage)
     typesafe_predictor = dspy.Predict(TypesafeSupportTicketTriage)
     timings: list[CaseTiming] = []
+    costs: list[CaseCost] = []
     long_text_fields = text_output_fields(BaselineSupportTicketTriage)
 
     for index, case in enumerate(cases, start=1):
@@ -242,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         baseline_start = time.perf_counter()
         baseline_result = baseline_predictor(**inputs)
         baseline_seconds = time.perf_counter() - baseline_start
+        baseline_usage = prediction_usage(baseline_result)
 
         typesafe_result = typesafe_predictor(**inputs)
         split_timing = typesafe_timings(typesafe_result)
@@ -254,6 +344,12 @@ def main(argv: list[str] | None = None) -> int:
             hybrid_total_seconds=split_timing.total_seconds,
         )
         timings.append(timing)
+        cost = CaseCost(
+            baseline_luna=baseline_usage,
+            typesafe=typesafe_client.last_usage,
+            hybrid_luna=prediction_usage(typesafe_result),
+        )
+        costs.append(cost)
 
         comparison = compare_predictions(
             BaselineSupportTicketTriage,
@@ -283,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  changed_fields={changed_fields}")
         print(render_prediction_comparison(comparison, max_value_width=28))
         print(f"  timings    {render_timing_line(timing)}")
+        print(f"  usage      {render_cost_line(cost)}")
         for field_name in long_text_fields:
             print(render_text_pair(field_name, baseline_result, typesafe_result))
 
@@ -305,6 +402,27 @@ def main(argv: list[str] | None = None) -> int:
                     f"avg_hybrid_dspy={avg_hybrid_dspy:.3f}s",
                     f"avg_hybrid_total={avg_hybrid_total:.3f}s",
                     f"avg_speedup={batch_speedup:+.1%}",
+                ]
+            )
+        )
+
+        total_baseline_cost = sum(item.baseline_usd for item in costs)
+        total_hybrid_cost = sum(item.hybrid_usd for item in costs)
+        cost_savings = 0.0
+        if total_baseline_cost > 0:
+            cost_savings = 1.0 - (total_hybrid_cost / total_baseline_cost)
+
+        print("\nBatch cost summary")
+        print(
+            "  ".join(
+                [
+                    f"cases={len(costs)}",
+                    f"total_baseline_cost=${total_baseline_cost:.6f}",
+                    f"total_hybrid_cost=${total_hybrid_cost:.6f}",
+                    f"avg_baseline_cost=${total_baseline_cost / len(costs):.6f}",
+                    f"avg_hybrid_cost=${total_hybrid_cost / len(costs):.6f}",
+                    f"cost_savings={cost_savings:+.1%}",
+                    "rates=luna_input_0.20,luna_output_1.20,typesafe_input_0.042_per_1M",
                 ]
             )
         )

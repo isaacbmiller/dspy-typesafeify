@@ -1,50 +1,56 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" role="img" aria-labelledby="title desc">
   <title id="title">Typesafe decorator cost and latency comparison</title>
-  <desc id="desc">Across three observed tickets, average latency fell from 3.570 seconds for plain DSPy to 1.890 seconds for the decorated path, a 47.1 percent reduction. The decorated latency comprises 0.207 seconds of Typesafe evaluation and 1.682 seconds of residual language-model work. The normalized input-token price for typed decisions is 0.042 dollars per million tokens with Typesafe versus 0.20 dollars with GPT-5.6 Luna; per-call token counts were not measured.</desc>
+  <desc id="desc">Across three observed tickets, average modeled cost fell from 0.000377 dollars to 0.000263 dollars per ticket, a 30.1 percent reduction. Average latency fell from 2.329 seconds to 1.958 seconds, a 15.9 percent reduction. The decorated latency comprises 0.205 seconds of Typesafe evaluation and 1.751 seconds of language-model work.</desc>
 
-  <rect width="1200" height="560" fill="#fbfaf7"/>
+  <rect width="1200" height="470" fill="#fbfaf7"/>
 
   <g font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#171717">
-    <text x="64" y="68" font-size="30" font-weight="600">Before vs. after <tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace">@typesafeify</tspan></text>
-    <text x="64" y="101" font-size="16" fill="#55524d">3 observed tickets · GPT-5.6 Luna, medium reasoning · caches off</text>
+    <text x="64" y="64" font-size="28" font-weight="600"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace">@typesafeify</tspan>: cost and latency</text>
+    <text x="64" y="94" font-size="15" fill="#55524d">3 observed tickets · averages per ticket</text>
 
-    <line x1="64" y1="139" x2="1136" y2="139" stroke="#cbc7bf" stroke-width="1"/>
-    <line x1="584" y1="177" x2="584" y2="466" stroke="#cbc7bf" stroke-width="1"/>
+    <line x1="64" y1="128" x2="1136" y2="128" stroke="#cbc7bf" stroke-width="1"/>
+    <line x1="590" y1="164" x2="590" y2="404" stroke="#cbc7bf" stroke-width="1"/>
 
-    <text x="64" y="195" font-size="21" font-weight="600">Typed-input cost</text>
-    <text x="64" y="221" font-size="13" fill="#66625c">USD per 1M input tokens</text>
+    <text x="64" y="177" font-size="20" font-weight="600">Modeled cost</text>
+    <text x="64" y="202" font-size="13" fill="#66625c">USD per ticket · all priced token categories</text>
 
-    <text x="64" y="274" font-size="15">Before · Luna</text>
-    <rect x="184" y="251" width="300" height="32" fill="#343330"/>
-    <text x="496" y="273" font-size="16" font-weight="600">$0.200</text>
+    <text x="64" y="258" font-size="15">Before</text>
+    <rect x="146" y="235" width="154" height="32" fill="#77736c"/>
+    <rect x="300" y="235" width="176" height="32" fill="#343330"/>
+    <text x="488" y="257" font-size="16" font-weight="600">$0.000377</text>
 
-    <text x="64" y="337" font-size="15">After · Typesafe</text>
-    <rect x="184" y="314" width="63" height="32" fill="#47866f"/>
-    <text x="259" y="336" font-size="16" font-weight="600">$0.042</text>
+    <text x="64" y="321" font-size="15">After</text>
+    <rect x="146" y="298" width="51.4" height="32" fill="#47866f"/>
+    <rect x="197.4" y="298" width="137.2" height="32" fill="#77736c"/>
+    <rect x="334.6" y="298" width="42.1" height="32" fill="#343330"/>
+    <text x="389" y="320" font-size="16" font-weight="600">$0.000263</text>
 
-    <text x="184" y="409" font-size="34" font-weight="600" fill="#27664f">79% lower</text>
-    <text x="184" y="438" font-size="15" fill="#27664f">4.8× less per typed input token</text>
+    <rect x="146" y="352" width="11" height="11" fill="#47866f"/>
+    <text x="164" y="362" font-size="12" fill="#55524d">Typesafe input</text>
+    <rect x="260" y="352" width="11" height="11" fill="#77736c"/>
+    <text x="278" y="362" font-size="12" fill="#55524d">Luna input</text>
+    <rect x="354" y="352" width="11" height="11" fill="#343330"/>
+    <text x="372" y="362" font-size="12" fill="#55524d">Luna output + reasoning</text>
 
-    <text x="632" y="195" font-size="21" font-weight="600">Observed latency</text>
-    <text x="632" y="221" font-size="13" fill="#66625c">Average wall-clock seconds per ticket</text>
+    <text x="146" y="402" font-size="27" font-weight="600" fill="#27664f">30.1% lower</text>
 
-    <text x="632" y="274" font-size="15">Before · plain DSPy</text>
-    <rect x="777" y="251" width="300" height="32" fill="#343330"/>
-    <text x="1089" y="273" font-size="16" font-weight="600">3.570 s</text>
+    <text x="638" y="177" font-size="20" font-weight="600">Observed latency</text>
+    <text x="638" y="202" font-size="13" fill="#66625c">Wall-clock seconds per ticket</text>
 
-    <text x="632" y="337" font-size="15">After · decorated</text>
-    <rect x="777" y="314" width="17.4" height="32" fill="#47866f"/>
-    <rect x="794.4" y="314" width="141.3" height="32" fill="#7699c2"/>
-    <text x="948" y="336" font-size="16" font-weight="600">1.890 s</text>
+    <text x="638" y="258" font-size="15">Before</text>
+    <rect x="720" y="235" width="330" height="32" fill="#7699c2"/>
+    <text x="1062" y="257" font-size="16" font-weight="600">2.329 s</text>
 
-    <rect x="777" y="370" width="12" height="12" fill="#47866f"/>
-    <text x="797" y="381" font-size="13" fill="#55524d">Typesafe 0.207 s</text>
-    <rect x="938" y="370" width="12" height="12" fill="#7699c2"/>
-    <text x="958" y="381" font-size="13" fill="#55524d">LLM 1.682 s</text>
+    <text x="638" y="321" font-size="15">After</text>
+    <rect x="720" y="298" width="29.0" height="32" fill="#47866f"/>
+    <rect x="749" y="298" width="248.2" height="32" fill="#7699c2"/>
+    <text x="1009" y="320" font-size="16" font-weight="600">1.958 s</text>
 
-    <text x="777" y="438" font-size="34" font-weight="600" fill="#27664f">47.1% faster</text>
+    <rect x="720" y="352" width="11" height="11" fill="#47866f"/>
+    <text x="738" y="362" font-size="12" fill="#55524d">Typesafe 0.205 s</text>
+    <rect x="873" y="352" width="11" height="11" fill="#7699c2"/>
+    <text x="891" y="362" font-size="12" fill="#55524d">LLM 1.751 s</text>
 
-    <line x1="64" y1="482" x2="1136" y2="482" stroke="#cbc7bf" stroke-width="1"/>
-    <text x="64" y="518" font-size="13" fill="#66625c">Cost shows normalized input-token rates for typed-decision work. Per-call dollar cost awaits measured token counts.</text>
+    <text x="720" y="402" font-size="27" font-weight="600" fill="#27664f">15.9% faster</text>
   </g>
 </svg>
