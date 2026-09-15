@@ -699,34 +699,51 @@ def _prepare_hybrid_call(
     plan = plan_signature(signature, field_configs=merged_field_configs)
 
     if plan.requires_dspy:
-        if lm is None:
-            raise ValueError(
-                "No LM is loaded for the residual DSPy outputs. Configure an LM with "
-                "`dspy.configure(lm=dspy.LM(...))` or use a signature that is fully handled by Typesafe."
-            )
-        if isinstance(lm, str):
-            raise ValueError(
-                f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
-                f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
-            )
-        if not isinstance(lm, BaseLM):
-            raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")
+        _configure_residual_dspy(lm, config)
 
-        temperature = config.get("temperature") or lm.kwargs.get("temperature")
-        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
-        if (temperature is None or temperature <= 0.15) and num_generations > 1:
-            config["temperature"] = 0.7
+    _move_prediction_to_config(kwargs, config)
+    _apply_input_defaults(signature, kwargs)
+    _warn_for_extra_inputs(signature, kwargs)
+    _warn_for_type_mismatches(signature, kwargs)
+    _warn_for_missing_inputs(signature, kwargs)
 
-    if "prediction" in kwargs:
-        prediction = kwargs["prediction"]
-        if isinstance(prediction, dict) and prediction.get("type") == "content" and "content" in prediction:
-            config["prediction"] = kwargs.pop("prediction")
+    return lm, config, signature, demos, kwargs, plan
 
+
+def _configure_residual_dspy(lm: BaseLM | str | None, config: dict[str, Any]) -> None:
+    if lm is None:
+        raise ValueError(
+            "No LM is loaded for the residual DSPy outputs. Configure an LM with "
+            "`dspy.configure(lm=dspy.LM(...))` or use a signature that is fully handled by Typesafe."
+        )
+    if isinstance(lm, str):
+        raise ValueError(
+            f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
+            f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
+        )
+    if not isinstance(lm, BaseLM):
+        raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")
+
+    temperature = config.get("temperature") or lm.kwargs.get("temperature")
+    num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
+    if (temperature is None or temperature <= 0.15) and num_generations > 1:
+        config["temperature"] = 0.7
+
+
+def _move_prediction_to_config(kwargs: dict[str, Any], config: dict[str, Any]) -> None:
+    prediction = kwargs.get("prediction")
+    if isinstance(prediction, dict) and prediction.get("type") == "content" and "content" in prediction:
+        config["prediction"] = kwargs.pop("prediction")
+
+
+def _apply_input_defaults(signature: type[Signature], inputs: dict[str, Any]) -> None:
     for name, input_field in signature.input_fields.items():
-        if name not in kwargs and input_field.default is not PydanticUndefined:
-            kwargs[name] = input_field.default
+        if name not in inputs and input_field.default is not PydanticUndefined:
+            inputs[name] = input_field.default
 
-    extra_fields = [name for name in kwargs if name not in signature.input_fields]
+
+def _warn_for_extra_inputs(signature: type[Signature], inputs: dict[str, Any]) -> None:
+    extra_fields = [name for name in inputs if name not in signature.input_fields]
     if extra_fields:
         logger.warning(
             "Input contains fields not in signature. These fields will be ignored: %s. Expected fields: %s.",
@@ -734,35 +751,41 @@ def _prepare_hybrid_call(
             list(signature.input_fields.keys()),
         )
 
-    if settings.warn_on_type_mismatch:
-        for field_name, field_info in signature.input_fields.items():
-            if field_name not in kwargs:
-                continue
-            value = kwargs[field_name]
-            expected_type = field_info.annotation
 
-            if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
-                continue
+def _warn_for_type_mismatches(signature: type[Signature], inputs: dict[str, Any]) -> None:
+    if not settings.warn_on_type_mismatch:
+        return
 
-            if not _is_value_compatible_with_type(value, expected_type):
-                logger.warning(
-                    "Type mismatch for field '%s': expected %s based on given Signature, "
-                    "but the provided value is incompatible: %s.",
-                    field_name,
-                    _get_type_name(expected_type),
-                    value,
-                )
+    for field_name, field_info in signature.input_fields.items():
+        if field_name not in inputs:
+            continue
+        value = inputs[field_name]
+        expected_type = field_info.annotation
 
-    if not all(name in kwargs for name in signature.input_fields):
-        present = [name for name in signature.input_fields if name in kwargs]
-        missing = [name for name in signature.input_fields if name not in kwargs]
-        logger.warning(
-            "Not all input fields were provided to module. Present: %s. Missing: %s.",
-            present,
-            missing,
-        )
+        if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
+            continue
 
-    return lm, config, signature, demos, kwargs, plan
+        if not _is_value_compatible_with_type(value, expected_type):
+            logger.warning(
+                "Type mismatch for field '%s': expected %s based on given Signature, "
+                "but the provided value is incompatible: %s.",
+                field_name,
+                _get_type_name(expected_type),
+                value,
+            )
+
+
+def _warn_for_missing_inputs(signature: type[Signature], inputs: dict[str, Any]) -> None:
+    if all(name in inputs for name in signature.input_fields):
+        return
+
+    present = [name for name in signature.input_fields if name in inputs]
+    missing = [name for name in signature.input_fields if name not in inputs]
+    logger.warning(
+        "Not all input fields were provided to module. Present: %s. Missing: %s.",
+        present,
+        missing,
+    )
 
 
 def _evaluate_typesafe(

@@ -1,97 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
-  <title id="title">DSPy before and after adding the Typesafe decorator</title>
-  <desc id="desc">Across three observed tickets, average latency fell from 3.57 seconds to 1.89 seconds, a 47.1 percent reduction. Projected sequential time for 100 calls falls from 357 to 189 seconds. Typesafe input pricing is 0.042 dollars per million tokens compared with 0.20 dollars for GPT-5.6 Luna, but total per-call cost was not measured because token counts were absent.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Typesafe decorator cost and latency comparison</title>
+  <desc id="desc">Across three observed tickets, average latency fell from 3.570 seconds for plain DSPy to 1.890 seconds for the decorated path, a 47.1 percent reduction. The decorated latency comprises 0.207 seconds of Typesafe evaluation and 1.682 seconds of residual language-model work. The normalized input-token price for typed decisions is 0.042 dollars per million tokens with Typesafe versus 0.20 dollars with GPT-5.6 Luna; per-call token counts were not measured.</desc>
 
-  <rect width="1200" height="760" fill="#fbfaf7"/>
+  <rect width="1200" height="560" fill="#fbfaf7"/>
 
   <g font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#171717">
-    <text x="64" y="70" font-size="30" font-weight="600">One decorator moves five decisions out of the generative LM</text>
-    <text x="64" y="102" font-size="16" fill="#55524d">3 observed tickets · GPT-5.6 Luna, medium reasoning · caches off</text>
+    <text x="64" y="68" font-size="30" font-weight="600">Before vs. after <tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace">@typesafeify</tspan></text>
+    <text x="64" y="101" font-size="16" fill="#55524d">3 observed tickets · GPT-5.6 Luna, medium reasoning · caches off</text>
 
-    <line x1="64" y1="138" x2="1136" y2="138" stroke="#cbc7bf" stroke-width="1"/>
+    <line x1="64" y1="139" x2="1136" y2="139" stroke="#cbc7bf" stroke-width="1"/>
+    <line x1="584" y1="177" x2="584" y2="466" stroke="#cbc7bf" stroke-width="1"/>
 
-    <text x="64" y="176" font-size="14" font-weight="600" letter-spacing="0.8">BEFORE</text>
-    <text x="160" y="176" font-size="16">DSPy LM decides</text>
-    <rect x="306" y="154" width="128" height="31" rx="3" fill="#dedbd4"/>
-    <text x="370" y="175" text-anchor="middle" font-size="13">5 typed fields</text>
-    <text x="452" y="176" font-size="18" fill="#77736c">+</text>
-    <rect x="478" y="154" width="130" height="31" rx="3" fill="#dedbd4"/>
-    <text x="543" y="175" text-anchor="middle" font-size="13">1 prose field</text>
+    <text x="64" y="195" font-size="21" font-weight="600">Typed-input cost</text>
+    <text x="64" y="221" font-size="13" fill="#66625c">USD per 1M input tokens</text>
 
-    <text x="64" y="224" font-size="14" font-weight="600" letter-spacing="0.8">AFTER</text>
-    <text x="160" y="224" font-size="16">Typesafe decides</text>
-    <rect x="306" y="202" width="128" height="31" rx="3" fill="#b7d7cb"/>
-    <text x="370" y="223" text-anchor="middle" font-size="13">5 typed fields</text>
-    <path d="M444 217 H478" stroke="#77736c" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <rect x="478" y="202" width="130" height="31" rx="3" fill="#c8d7ea"/>
-    <text x="543" y="223" text-anchor="middle" font-size="13">DSPy writes prose</text>
-    <text x="636" y="224" font-size="14" fill="#55524d">same Prediction object</text>
+    <text x="64" y="274" font-size="15">Before · Luna</text>
+    <rect x="184" y="251" width="300" height="32" fill="#343330"/>
+    <text x="496" y="273" font-size="16" font-weight="600">$0.200</text>
 
-    <defs>
-      <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#77736c"/>
-      </marker>
-    </defs>
+    <text x="64" y="337" font-size="15">After · Typesafe</text>
+    <rect x="184" y="314" width="63" height="32" fill="#47866f"/>
+    <text x="259" y="336" font-size="16" font-weight="600">$0.042</text>
 
-    <line x1="64" y1="268" x2="1136" y2="268" stroke="#cbc7bf" stroke-width="1"/>
+    <text x="184" y="409" font-size="34" font-weight="600" fill="#27664f">79% lower</text>
+    <text x="184" y="438" font-size="15" fill="#27664f">4.8× less per typed input token</text>
 
-    <text x="64" y="310" font-size="20" font-weight="600">Sequential time for 100 calls</text>
-    <text x="64" y="334" font-size="13" fill="#66625c">Projected from observed mean latency; bar widths share one zero baseline</text>
+    <text x="632" y="195" font-size="21" font-weight="600">Observed latency</text>
+    <text x="632" y="221" font-size="13" fill="#66625c">Average wall-clock seconds per ticket</text>
 
-    <text x="64" y="383" font-size="14">Plain DSPy</text>
-    <rect x="178" y="363" width="380" height="29" fill="#343330"/>
-    <text x="570" y="383" font-size="15" font-weight="600">357 s</text>
+    <text x="632" y="274" font-size="15">Before · plain DSPy</text>
+    <rect x="777" y="251" width="300" height="32" fill="#343330"/>
+    <text x="1089" y="273" font-size="16" font-weight="600">3.570 s</text>
 
-    <text x="64" y="433" font-size="14">Decorated</text>
-    <rect x="178" y="413" width="22.1" height="29" fill="#47866f"/>
-    <rect x="200.1" y="413" width="179.1" height="29" fill="#7699c2"/>
-    <text x="391" y="433" font-size="15" font-weight="600">189 s</text>
+    <text x="632" y="337" font-size="15">After · decorated</text>
+    <rect x="777" y="314" width="17.4" height="32" fill="#47866f"/>
+    <rect x="794.4" y="314" width="141.3" height="32" fill="#7699c2"/>
+    <text x="948" y="336" font-size="16" font-weight="600">1.890 s</text>
 
-    <rect x="178" y="466" width="12" height="12" fill="#47866f"/>
-    <text x="198" y="477" font-size="12" fill="#55524d">Typesafe 20.7 s</text>
-    <rect x="310" y="466" width="12" height="12" fill="#7699c2"/>
-    <text x="330" y="477" font-size="12" fill="#55524d">residual DSPy 168.2 s</text>
+    <rect x="777" y="370" width="12" height="12" fill="#47866f"/>
+    <text x="797" y="381" font-size="13" fill="#55524d">Typesafe 0.207 s</text>
+    <rect x="938" y="370" width="12" height="12" fill="#7699c2"/>
+    <text x="958" y="381" font-size="13" fill="#55524d">LLM 1.682 s</text>
 
-    <text x="178" y="518" font-size="32" font-weight="600" fill="#27664f">−168 s</text>
-    <text x="302" y="518" font-size="15" fill="#27664f">per 100 calls · 47.1% faster</text>
+    <text x="777" y="438" font-size="34" font-weight="600" fill="#27664f">47.1% faster</text>
 
-    <line x1="640" y1="298" x2="640" y2="548" stroke="#cbc7bf" stroke-width="1"/>
-
-    <text x="684" y="310" font-size="20" font-weight="600">Input price</text>
-    <text x="684" y="334" font-size="13" fill="#66625c">USD per 1M input tokens · normalized rate, not total run cost</text>
-
-    <text x="684" y="383" font-size="14">GPT-5.6 Luna</text>
-    <rect x="804" y="363" width="300" height="29" fill="#343330"/>
-    <text x="1116" y="383" font-size="15" font-weight="600">$0.200</text>
-
-    <text x="684" y="433" font-size="14">Typesafe</text>
-    <rect x="804" y="413" width="63" height="29" fill="#47866f"/>
-    <text x="879" y="433" font-size="15" font-weight="600">$0.042</text>
-
-    <text x="804" y="487" font-size="32" font-weight="600" fill="#27664f">79% lower</text>
-    <text x="804" y="518" font-size="15" fill="#27664f">4.8× less per input token</text>
-    <text x="804" y="540" font-size="12" fill="#66625c">Typesafe rate supplied; Luna rate published</text>
-
-    <line x1="64" y1="574" x2="1136" y2="574" stroke="#cbc7bf" stroke-width="1"/>
-
-    <text x="64" y="616" font-size="20" font-weight="600">What changed in the answers?</text>
-    <text x="64" y="642" font-size="14">Categorical agreement</text>
-    <text x="220" y="642" font-size="22" font-weight="600">11 / 12</text>
-    <text x="308" y="642" font-size="13" fill="#66625c">one owner-team disagreement</text>
-
-    <g transform="translate(64 660)">
-      <circle cx="8" cy="8" r="7" fill="#47866f"/><circle cx="30" cy="8" r="7" fill="#47866f"/>
-      <circle cx="52" cy="8" r="7" fill="#47866f"/><circle cx="74" cy="8" r="7" fill="#47866f"/>
-      <circle cx="96" cy="8" r="7" fill="#47866f"/><circle cx="118" cy="8" r="7" fill="#47866f"/>
-      <circle cx="140" cy="8" r="7" fill="#47866f"/><circle cx="162" cy="8" r="7" fill="#47866f"/>
-      <circle cx="184" cy="8" r="7" fill="#47866f"/><circle cx="206" cy="8" r="7" fill="#47866f"/>
-      <circle cx="228" cy="8" r="7" fill="#47866f"/><circle cx="250" cy="8" r="7" fill="#c47a3d"/>
-    </g>
-
-    <text x="470" y="642" font-size="14">Severity score mean absolute difference</text>
-    <text x="767" y="642" font-size="22" font-weight="600">0.19</text>
-    <text x="818" y="642" font-size="13" fill="#66625c">on the declared 1–5 scale</text>
-
-    <text x="64" y="719" font-size="12" fill="#66625c">Observed: 3 demo tickets. Projected: sequential time ×100. Estimated: price-rate comparison. Per-call dollar cost awaits measured token counts.</text>
+    <line x1="64" y1="482" x2="1136" y2="482" stroke="#cbc7bf" stroke-width="1"/>
+    <text x="64" y="518" font-size="13" fill="#66625c">Cost shows normalized input-token rates for typed-decision work. Per-call dollar cost awaits measured token counts.</text>
   </g>
 </svg>

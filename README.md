@@ -6,6 +6,8 @@ isolation: can a normal DSPy signature opt into Typesafe's typed inference path
 with one decorator, while application code keeps constructing and calling
 `dspy.Predict` exactly as before?
 
+![Observed before-and-after benchmark for the Typesafe decorator](examples/typesafe_dspy_ticket_triage/benchmark.svg)
+
 The meaningful integration diff is intentionally tiny:
 
 ```diff
@@ -84,8 +86,6 @@ Across the three observed cases, the decorated path averaged **1.890 seconds**
 versus **3.570 seconds** for plain DSPy: **47.1% faster**, or a projected
 **2m48s saved per 100 sequential calls**. Eleven of the twelve categorical
 typed decisions agreed; the one difference was an `owner_team` choice.
-
-![Observed before-and-after benchmark for the Typesafe decorator](examples/typesafe_dspy_ticket_triage/benchmark.svg)
 
 The cost calculation will use these explicit inputs:
 
