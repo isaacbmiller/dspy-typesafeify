@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 JsonValue = str | list[Any] | dict[str, Any]
 TypesafeKind = Literal["noul", "choice", "score", "disable"]
 DocumentBuilder = Callable[[type[Signature], dict[str, Any]], JsonValue]
-ScoreFieldSpec = Mapping[str, Sequence[int] | Mapping[int, JsonValue]]
+ScoreFieldSpec = Mapping[str, Sequence[float] | Mapping[float, JsonValue]]
 
 _TYPESAFE_ENABLED_ATTR = "__typesafe_dspy_enabled__"
 _TYPESAFE_CONFIG_KEY = "typesafe_dspy_config"
@@ -108,7 +108,7 @@ class TypesafeFieldConfig:
     kind: TypesafeKind | None = None
     instructions: JsonValue | None = None
     choice_options: Mapping[Any, JsonValue] | None = None
-    score_levels: Mapping[int, JsonValue] | None = None
+    score_levels: Mapping[float, JsonValue] | None = None
 
 
 @dataclass(frozen=True)
@@ -496,8 +496,7 @@ def render_prediction_comparison(
 class TypesafePredict(Predict):
     """Resolve typed outputs with Typesafe, optionally rejecting all LM fallback.
 
-    Use strict=True for a TypeSafe-only predictor. Score[...] annotations carry
-    ordered descriptions, using the native zero-based Score scale.
+    Use strict=True for a TypeSafe-only predictor.
     """
 
     def __init__(
@@ -1049,8 +1048,8 @@ def _validate_field_configs(
 
 def _score_levels_from_spec(
     field_name: str,
-    spec: Sequence[int] | Mapping[int, JsonValue],
-) -> Mapping[int, JsonValue]:
+    spec: Sequence[float] | Mapping[float, JsonValue],
+) -> Mapping[float, JsonValue]:
     if isinstance(spec, Mapping):
         return dict(spec)
 
@@ -1065,14 +1064,14 @@ def _score_levels_from_spec(
         low, high = anchors
         if low >= high:
             raise ValueError(f"Score field `{field_name}` requires an increasing range, received {anchors}.")
-        midpoint = round((low + high) / 2)
+        midpoint = (low + high) / 2
         anchors = sorted({low, midpoint, high})
     else:
         anchors = list(anchors)
         if anchors != sorted(anchors):
             raise ValueError(f"Score field `{field_name}` must be in increasing order, received {anchors}.")
 
-    levels: dict[int, JsonValue] = {}
+    levels: dict[float, JsonValue] = {}
     for index, anchor in enumerate(anchors):
         if index == 0:
             meaning = f"`{field_name}` is near the low end of the range ({anchor})."
@@ -1080,7 +1079,7 @@ def _score_levels_from_spec(
             meaning = f"`{field_name}` is near the high end of the range ({anchor})."
         else:
             meaning = f"`{field_name}` is around the middle of the range ({anchor})."
-        levels[int(anchor)] = meaning
+        levels[anchor] = meaning
     return levels
 
 

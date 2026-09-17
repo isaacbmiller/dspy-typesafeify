@@ -126,6 +126,11 @@ string-valued type parameters. DSPy state loading preserves the rubric when
 loading into an existing matching signature; JSON state alone does not recreate
 the type declaration. The existing float output plus
 `TypesafeFieldConfig(score_levels=...)` API remains available.
+Numeric anchor mappings and `score_fields` sequences accept integers and floats:
+anchors are local weights, not the API's integer level indices. Sequence shorthand
+preserves fractional anchors and uses the unrounded midpoint for `[min, max]`.
+For example, `[0, 5]` now gives levels `0, 2.5, 5`; use `[0, 2, 5]` to retain
+the previous rounded midpoint explicitly.
 Import order does not affect signature definitions, and the explicit predictor
 does not change DSPy's methods or field metadata registry. Avoid the decorator
 and `configure_typesafe()` if you do not want their opt-in global interception.

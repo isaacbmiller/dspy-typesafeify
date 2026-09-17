@@ -42,7 +42,7 @@ class FakePrompt:
     kind: str
     instructions: object
     options: dict[str, object] | None = None
-    levels: dict[int, object] | None = None
+    levels: dict[float, object] | None = None
 
 
 class FakePromptFactory:
@@ -429,8 +429,17 @@ def test_typesafeify_works_with_plain_dspy_predict():
     assert client.calls[0]["document"]["inputs"]["sentence"] == "I got the job offer!"
 
 
-def test_typesafeify_score_field_shorthand_builds_score_plan():
-    @typesafeify(score_fields={"review_stars": [0, 5]})
+@pytest.mark.parametrize(
+    "spec, expected_anchors, expected_score",
+    [
+        ([0, 5], (0, 2.5, 5), 3.5),
+        ([-0.5, 0.75], (-0.5, 0.125, 0.75), 0.375),
+        ([-0.5, 0.25, 0.75], (-0.5, 0.25, 0.75), 0.425),
+        ({-0.5: "Low", 0.25: "Medium", 0.75: "High"}, (-0.5, 0.25, 0.75), 0.425),
+    ],
+)
+def test_typesafeify_score_field_shorthand_builds_score_plan(spec, expected_anchors, expected_score):
+    @typesafeify(score_fields={"review_stars": spec})
     class ReviewSignature(dspy.Signature):
         """Estimate review quality."""
 
@@ -442,7 +451,26 @@ def test_typesafeify_score_field_shorthand_builds_score_plan():
     assert plan.typesafe_field_names == ("review_stars",)
     prompt_plan = plan.prompt_plans[0]
     assert prompt_plan.kind == "score"
-    assert tuple(prompt_plan.score_levels) == (0, 2, 5)
+    assert tuple(prompt_plan.score_levels) == expected_anchors
+
+    client = FakeTypesafeClient(
+        FakeEvaluation(
+            scores={
+                "review_stars": {"score": 1.4, "probabilities": {0: 0.1, 1: 0.4, 2: 0.5}},
+            }
+        )
+    )
+    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
+    result = TypesafePredict(ReviewSignature, config, strict=True)(review_text="Evidence")
+    assert result.review_stars == pytest.approx(expected_score)
+    assert tuple(client.calls[0]["questions"]["review_stars"].levels) == expected_anchors
+    assert typesafe_results(result)["review_stars"].probabilities == dict(
+        zip(
+            expected_anchors,
+            (0.1, 0.4, 0.5),
+            strict=True,
+        )
+    )
 
 
 def test_typesafe_score_maps_fuzzy_index_back_to_configured_scale():
