@@ -358,6 +358,58 @@ def test_levels_reject_conflicting_configuration():
         TypesafePredict(Review, config, strict=True)
 
 
+@pytest.mark.parametrize("entry_point", ["explicit", "global", "shared_config", "module"])
+def test_score_composes_with_existing_entry_points(entry_point):
+    @typesafeify(
+        fields={"relevance": TypesafeFieldConfig(instructions="Evaluate only the cited evidence.")},
+        score_fields={"severity": {0.5: "Minor", 2.5: "Major"}},
+    )
+    class Review(dspy.Signature):
+        text: str = dspy.InputField()
+        relevance: Score["Unrelated", "Direct"] = dspy.OutputField()  # noqa: F821
+        severity: float = dspy.OutputField()
+
+    client = FakeTypesafeClient(
+        FakeEvaluation(
+            scores={
+                "relevance": {"score": 0.8, "probabilities": {0: 0.2, 1: 0.8}},
+                "severity": {"score": 0.3, "probabilities": {0: 0.7, 1: 0.3}},
+            }
+        )
+    )
+    config_args = {"client": client, "model": "jev-latest", "prompt_factory": FakePromptFactory()}
+    if entry_point in ("global", "shared_config"):
+        config = configure_typesafe(**config_args)
+    else:
+        config = TypesafeConfig(**config_args)
+
+    if entry_point == "global":
+        predict = dspy.Predict(Review)
+    elif entry_point == "module":
+
+        class ReviewProgram(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.review = dspy.Predict(Review)
+
+            def forward(self, **kwargs):
+                return self.review(**kwargs)
+
+        predict = enable_typesafe(ReviewProgram(), typesafe_config=config)
+    else:
+        predict = TypesafePredict(Review, typesafe_config=config, strict=True)
+
+    result = predict(text="Evidence")
+    assert isinstance(result.relevance, Review.output_fields["relevance"].annotation)
+    assert result.relevance == pytest.approx(0.8)
+    assert result.severity == pytest.approx(1.1)
+    assert typesafe_results(result)["severity"].probabilities == {0.5: 0.7, 2.5: 0.3}
+    assert len(client.calls) == 1
+    questions = client.calls[0]["questions"]
+    assert questions["relevance"].instructions == "Evaluate only the cited evidence."
+    assert questions["severity"].levels == {0.5: "Minor", 2.5: "Major"}
+
+
 def test_enable_typesafe_wraps_existing_predictors():
     class RoutingSignature(dspy.Signature):
         """Choose the initial triage route."""

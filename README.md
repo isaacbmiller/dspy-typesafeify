@@ -58,16 +58,16 @@ The demo keeps separate baseline and decorated signature files only to make a
 controlled before/after run possible. Before sending either request, it proves
 that both signatures have identical fields and instructions.
 
-## Use TypeSafe directly
+## Use an explicit predictor
 
 Use `TypesafePredict(..., strict=True)` to evaluate every output with TypeSafe.
-It needs no DSPy LM and does not modify `dspy.Predict` or register custom field
-arguments. Do not call `configure_typesafe()` or use `@typesafeify` for this path;
-those enable the separate global interception interface shown above.
+It needs no DSPy LM and does not itself modify `dspy.Predict` or register custom
+field arguments. It accepts the same decorated signatures and field configuration
+as the existing integration; decorators and global configuration are optional,
+not incompatible.
 
-From this checkout, install the dependencies with `uv sync --extra typesafe` and
-set `TYPESAFE_API_KEY` in your environment. Save the following as a Python script
-and run it with `uv run python <script.py>`:
+The example requires `typesafe_dspy`, the TypeSafe Python SDK, and a
+`TYPESAFE_API_KEY` environment variable.
 
 ```python
 import dspy
@@ -106,6 +106,28 @@ print(details["supported"].probability)          # probability of yes
 print(details["relevance"].probabilities)         # probability per rubric level
 print(details["relevance"].confidence)            # distribution concentration
 ```
+
+### Compose with existing TypeSafe and DSPy programs
+
+`Score[...]` describes an output field; it does not select an execution method.
+The same signature works through the existing entry points:
+
+| Existing entry point | How it composes |
+| --- | --- |
+| `@typesafeify(...)` / `@typesafe_signature(...)` | Attach field configuration to a signature. `TypesafePredict` reads that configuration, including legacy `score_fields`. The decorators themselves do not patch DSPy. |
+| `configure_typesafe(...)` + `dspy.Predict` | Continue using decorated signatures through the global runtime. `Score[...]` fields use the same score planner. |
+| `TypesafePredict(signature, typesafe_config=config)` | Use a decorated or undecorated signature explicitly. Pass a `TypesafeConfig` directly or reuse the object returned by `configure_typesafe(...)`. |
+| `enable_typesafe(program, typesafe_config=config)` | Wrap existing predictors inside a DSPy module. Score annotations remain on their signatures. Already-wrapped predictors are left unchanged. |
+
+`configure_typesafe()` installs global interception for ordinary `dspy.Predict`
+calls. Constructing `TypesafeConfig` directly avoids that global change. Explicit
+predictors use the configuration passed to them rather than implicitly reading
+the global runtime.
+
+Keep each Score rubric in one place: a `Score[...]` annotation cannot also have
+a `score_levels` or `choice_options` override. Per-field instruction overrides
+can still be supplied through decorators or configuration. Existing `float`
+outputs with configured score levels remain supported.
 
 ### Supported outputs and result metadata
 
