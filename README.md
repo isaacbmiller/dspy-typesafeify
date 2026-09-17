@@ -58,15 +58,16 @@ The demo keeps separate baseline and decorated signature files only to make a
 controlled before/after run possible. Before sending either request, it proves
 that both signatures have identical fields and instructions.
 
-## Run the comparison
+## Use TypeSafe directly
 
-### Explicit TypeSafe-only prediction without monkey-patching
+Use `TypesafePredict(..., strict=True)` to evaluate every output with TypeSafe.
+It needs no DSPy LM and does not modify `dspy.Predict` or register custom field
+arguments. Do not call `configure_typesafe()` or use `@typesafeify` for this path;
+those enable the separate global interception interface shown above.
 
-Use `TypesafePredict` directly when every output should come from TypeSafe.
-This path does not require `configure_typesafe()`, `install()`, a decorator, or
-a configured DSPy LM. `strict=True` rejects outputs that would require an LM,
-including an unconfigured numeric output, before any inference call. The default
-remains hybrid execution for existing callers.
+From this checkout, install the dependencies with `uv sync --extra typesafe` and
+set `TYPESAFE_API_KEY` in your environment. Save the following as a Python script
+and run it with `uv run python <script.py>`:
 
 ```python
 import dspy
@@ -74,68 +75,122 @@ from typesafe_sdk import TypeSafeClient
 from typesafe_dspy import Score, TypesafeConfig, TypesafePredict, typesafe_results
 
 class Review(dspy.Signature):
-    """Evaluate the evidence in the passage."""
-    passage: str = dspy.InputField()
-    supported: bool = dspy.OutputField(desc="Does the passage support its claim?")
-    relevance: Score["Unrelated", "Partial evidence", "Direct evidence"] = dspy.OutputField(
-        desc="How relevant is the evidence to the claim?"
+    """Evaluate the claim using only the supplied evidence."""
+
+    claim: str = dspy.InputField(desc="The assertion to check.")
+    evidence: str = dspy.InputField(desc="Source material for checking the claim.")
+    supported: bool = dspy.OutputField(desc="Does the evidence establish the claim?")
+    relevance: Score[
+        "Evidence does not address the claim",
+        "Evidence addresses part of the claim",
+        "Evidence directly addresses the entire claim",
+    ] = dspy.OutputField(
+        desc="How much of the claim does the evidence address, whether supporting or contradicting it?"
     )
 
-predict = TypesafePredict(
-    Review,
-    typesafe_config=TypesafeConfig(client=TypeSafeClient(), model="jev-latest"),
-    strict=True,
-)
-result = predict(passage="...")
-score = result.relevance
-probabilities = typesafe_results(result)["relevance"].probabilities
+with TypeSafeClient() as client:
+    predict = TypesafePredict(
+        Review,
+        typesafe_config=TypesafeConfig(client=client, model="jev-latest"),
+        strict=True,
+    )
+    result = predict(
+        claim="The museum opens at 9 a.m. on Sundays.",
+        evidence="Sunday opening hours: 10 a.m. to 5 p.m.",
+    )
+
+print(result.supported)                          # bool
+print(float(result.relevance))                   # numeric rubric position, 0–2
+details = typesafe_results(result)
+print(details["supported"].probability)          # probability of yes
+print(details["relevance"].probabilities)         # probability per rubric level
+print(details["relevance"].confidence)            # distribution concentration
 ```
 
-`Score[...]` carries the rubric in the signature. It creates a float subtype with
-ordered, equally spaced levels: this example returns a number in 0–2, including
-intermediate values such as 1.6. Each Score output can declare a different rubric.
-Arithmetic produces ordinary floats; probabilities stay in `typesafe_results`.
-Pydantic validation rejects nonfinite or out-of-range values, and the JSON schema
-includes the numeric range and level descriptions. Rubrics need at least two
-distinct, nonempty descriptions and cannot conflict with field overrides.
+### Supported outputs and result metadata
 
-To specify a different starting point or unequal spacing, use explicit anchors:
+All supported outputs in a signature are sent in one request and evaluated
+independently against the same state. One output cannot read another's answer.
+
+| Signature annotation | TypeSafe question | Prediction field | `typesafe_results(result)[field]` |
+| --- | --- | --- | --- |
+| `bool` | Noul | `True` when probability ≥ `noul_true_threshold` (default `0.5`) | `probability` |
+| `Literal["billing", "technical"]` | Choice | Selected literal value | `probabilities`, `confidence` |
+| `Score["Low", "Medium", "High"]` | Score | Float-compatible rubric position | `probabilities`, `confidence`, `expectation` |
+| `float` with explicit Score field configuration | Score | Numeric expectation on the configured scale | `probabilities`, `confidence`, `expectation` |
+
+Strict mode rejects unsupported outputs, such as freeform `str`, an unconfigured
+`float`, or nested models, instead of falling back to an LM. It also rejects LM
+generation options and Pydantic output constraints. Without `strict=True`, the
+existing hybrid behavior remains: residual outputs require a configured DSPy LM.
+
+### Define a Score rubric
+
+Use Score for ordered levels of one dimension; use Choice for unordered
+alternatives. TypeSafe assigns the descriptions positions `0, 1, 2, …` and
+returns their probability-weighted mean. Probabilities `0.1, 0.4, 0.5` over three
+levels therefore give a score of `1.4`, not the winning level `2`.
+
+This score is a position on your rubric, **not confidence or a probability of
+correctness**. Different distributions can have the same mean. Keep the
+probabilities when the distinction matters to your application.
+
+`Score[...]` produces a float subtype: comparisons and arithmetic work normally,
+arithmetic returns plain floats, and JSON serialization produces a number.
+Descriptions must be distinct, nonempty strings. TypeSafe accepts 2–10 levels;
+write each description so it makes sense independently of its neighbors.
+
+For a custom numeric scale, supply `(anchor, description)` pairs:
 
 ```python
 severity: Score[(1, "Low"), (3, "Medium"), (10, "Critical")] = dspy.OutputField()
 ```
 
-Anchors must be finite, strictly increasing numbers. Jev receives the ordered
-descriptions; the integration maps its probability distribution onto your anchors
-and returns their weighted mean, not a description string or the winning anchor.
-For example, probabilities 0.1, 0.4, and 0.5 produce a numeric score of 6.3.
-Each output can use its own scale. Shorthand descriptions still mean 0, 1, 2, …;
-do not mix shorthand descriptions and explicit pairs in one rubric.
+Custom anchors are an **integration-side conversion**, not a TypeSafe API
+parameter. Jev receives only the ordered descriptions; the integration weights
+its returned probabilities by your anchors. The same `0.1, 0.4, 0.5` distribution
+gives `6.3` on the `1, 3, 10` scale. Metadata probabilities are keyed by those
+anchors. Each field can declare a different rubric.
 
-Field descriptions are model-visible context, separate from the rubric levels.
-With the default request builders, `OutputField(desc=...)` is included at
-`questions[field].instructions.output_field.description`, alongside the signature
-instructions at `questions[field].instructions.task`. This applies to bool, Literal,
-and Score outputs. Input and output descriptions also appear in shared `state` at
-`signature.inputs[field].description` and `signature.outputs[field].description`.
-An explicit `TypesafeFieldConfig(instructions=...)` replaces that question's default
-instructions; the default shared state still includes its field description.
+Anchors must be finite, strictly increasing integers or floats. Do not mix pairs
+and description-only entries in one rubric. Values are validated against the
+rubric's endpoints, and its range and descriptions appear in the JSON schema.
 
-This is a runtime prototype, not a promise of static type-checker support for
-string-valued type parameters. DSPy state loading preserves the rubric when
-loading into an existing matching signature; JSON state alone does not recreate
-the type declaration. The existing float output plus
-`TypesafeFieldConfig(score_levels=...)` API remains available.
-Numeric anchor mappings and `score_fields` sequences accept integers and floats:
-anchors are local weights, not the API's integer level indices. Sequence shorthand
-preserves fractional anchors and uses the unrounded midpoint for `[min, max]`.
-For example, `[0, 5]` now gives levels `0, 2.5, 5`; use `[0, 2, 5]` to retain
-the previous rounded midpoint explicitly.
-Import order does not affect signature definitions, and the explicit predictor
-does not change DSPy's methods or field metadata registry. Avoid the decorator
-and `configure_typesafe()` if you do not want their opt-in global interception.
+### How the signature becomes a request
 
-### Hybrid comparison demo
+The default builders preserve field descriptions as model-visible context:
+
+| DSPy data | TypeSafe request location |
+| --- | --- |
+| Input values | `state.inputs` |
+| Input/output field descriptions | `state.signature.inputs[field].description` / `state.signature.outputs[field].description` |
+| Signature instructions | `state.signature.instructions` and each `questions[field].instructions.task` |
+| Output field description | `questions[field].instructions.output_field.description` |
+| Score rubric descriptions | `questions[field].criteria`, in declared order |
+
+`TypesafeFieldConfig(instructions=...)` replaces that question's generated
+instructions. Its field description remains in the default shared state.
+A custom `document_builder` replaces the shared-state construction entirely.
+
+### Compatibility and current limitations
+
+- `Score[...]` is experimental runtime syntax. Static type checkers may reject
+  its rubric parameters; it is not a standard Python generic annotation.
+- DSPy JSON signature state must be loaded into an existing matching signature;
+  it does not reconstruct the custom Score type declaration.
+- Existing `TypesafeFieldConfig(score_levels=...)` mappings remain supported.
+  Numeric-anchor annotations use `float` to accept fractional scales as well as
+  integers. TypeSafe's probability **indices** remain integers.
+- Legacy `score_fields` sequence shorthand now preserves fractional anchors and
+  uses the unrounded midpoint. `[0, 5]` produces `0, 2.5, 5`; specify `[0, 2, 5]`
+  to preserve the previous rounded scale.
+- Choice/Score confidence describes distribution concentration, not a guarantee
+  of correctness. Validate thresholds and rubric behavior on your own data.
+
+See TypeSafe's [Score reference](https://docs.typesafe.ai/primitives/score) for
+native scoring semantics and rubric-writing guidance.
+
+## Run the hybrid comparison
 
 Install the published Typesafe SDK and this fork's development dependencies:
 
