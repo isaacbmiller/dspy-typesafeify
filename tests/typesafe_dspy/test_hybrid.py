@@ -9,6 +9,7 @@ import dspy
 from dspy.utils.dummies import DummyLM
 from typesafe_dspy import (
     PredictionComparison,
+    Score,
     TypesafeConfig,
     TypesafeFieldConfig,
     TypesafePredict,
@@ -230,7 +231,7 @@ def test_strict_predict_with_levels_needs_neither_lm_nor_patching(asynchronous):
     class Review(dspy.Signature):
         text: str = dspy.InputField()
         supported: bool = dspy.OutputField()
-        relevance: float = dspy.OutputField()
+        relevance: Score["Unrelated", "Partial", "Direct"] = dspy.OutputField()  # noqa: F821 - runtime rubric strings
 
     methods = (dspy.Predict.forward, dspy.Predict.aforward, dspy.Predict._forward_preprocess)
     field_args = list(DSPY_FIELD_ARG_NAMES)
@@ -241,10 +242,11 @@ def test_strict_predict_with_levels_needs_neither_lm_nor_patching(asynchronous):
         )
     )
     config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
-    predict = TypesafePredict(Review, config, strict=True, levels={"relevance": ["Unrelated", "Partial", "Direct"]})
+    predict = TypesafePredict(Review, config, strict=True)
     result = asyncio.run(predict.acall(text="Evidence")) if asynchronous else predict(text="Evidence")
     assert result.supported is False
     assert result.relevance == pytest.approx(1.6)
+    assert isinstance(result.relevance, Review.output_fields["relevance"].annotation)
     assert typesafe_results(result)["relevance"].probabilities == {0: 0.1, 1: 0.2, 2: 0.7}
     assert len(client.calls) == 1
     assert client.calls[0]["questions"]["relevance"].levels == {0: "Unrelated", 1: "Partial", 2: "Direct"}
@@ -271,33 +273,31 @@ def test_strict_predict_rejects_residual_outputs_and_call_overrides_before_infer
 @pytest.mark.parametrize(
     "levels",
     [
-        [],
-        {"unknown": ["Low", "High"]},
-        {"text": ["Low", "High"]},
-        {"score": []},
-        {"score": ["Only"]},
-        {"score": "Low, High"},
-        {"score": ["Low", "Low"]},
-        {"score": ["Low", " "]},
-        {"score": ["Low", 2]},
+        (),
+        ("Only",),
+        "Low, High",
+        ("Low", "Low"),
+        ("Low", " "),
+        ("Low", 2),
     ],
 )
 def test_invalid_levels_rejected_before_inference(levels):
-    client = FakeTypesafeClient(FakeEvaluation())
-    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
     with pytest.raises(ValueError):
-        TypesafePredict("text -> score: float", config, strict=True, levels=levels)
-    assert client.calls == []
+        Score[levels]
 
 
 def test_levels_reject_conflicting_configuration():
+    class Review(dspy.Signature):
+        text: str = dspy.InputField()
+        score: Score["Low", "High"] = dspy.OutputField()  # noqa: F821 - runtime rubric strings
+
     config = TypesafeConfig(
         client=FakeTypesafeClient(FakeEvaluation()),
         model="jev-latest",
         field_configs={"score": TypesafeFieldConfig(kind="score", score_levels={1: "Low", 5: "High"})},
     )
-    with pytest.raises(ValueError, match="existing Typesafe override"):
-        TypesafePredict("text -> score: float", config, levels={"score": ["Low", "High"]})
+    with pytest.raises(ValueError, match="conflicting overrides"):
+        TypesafePredict(Review, config, strict=True)
 
 
 def test_enable_typesafe_wraps_existing_predictors():

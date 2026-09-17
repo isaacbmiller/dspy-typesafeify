@@ -71,30 +71,39 @@ remains hybrid execution for existing callers.
 ```python
 import dspy
 from typesafe_sdk import TypeSafeClient
-from typesafe_dspy import TypesafeConfig, TypesafePredict, typesafe_results
+from typesafe_dspy import Score, TypesafeConfig, TypesafePredict, typesafe_results
 
 class Review(dspy.Signature):
     """Evaluate the evidence in the passage."""
     passage: str = dspy.InputField()
     supported: bool = dspy.OutputField(desc="Does the passage support its claim?")
-    relevance: float = dspy.OutputField(desc="How relevant is the evidence to the claim?")
+    relevance: Score["Unrelated", "Partial evidence", "Direct evidence"] = dspy.OutputField(
+        desc="How relevant is the evidence to the claim?"
+    )
 
 predict = TypesafePredict(
     Review,
     typesafe_config=TypesafeConfig(client=TypeSafeClient(), model="jev-latest"),
     strict=True,
-    levels={"relevance": ["Unrelated", "Partial evidence", "Direct evidence"]},
 )
 result = predict(passage="...")
 score = result.relevance
 probabilities = typesafe_results(result)["relevance"].probabilities
 ```
 
-`levels` belongs to the predictor, not `OutputField`. It defines ordered Score
-descriptions with zero-based numeric anchors: this example returns a float in
-0–2, including intermediate values such as 1.6. It requires at least two distinct,
-nonempty descriptions and cannot conflict with a field override. For custom
-numeric anchors, use the existing `TypesafeFieldConfig(score_levels=...)` API.
+`Score[...]` carries the rubric in the signature. It creates a float subtype with
+ordered, equally spaced levels: this example returns a number in 0–2, including
+intermediate values such as 1.6. Each Score output can declare a different rubric.
+Arithmetic produces ordinary floats; probabilities stay in `typesafe_results`.
+Pydantic validation rejects nonfinite or out-of-range values, and the JSON schema
+includes the numeric range and level descriptions. Rubrics need at least two
+distinct, nonempty descriptions and cannot conflict with field overrides.
+
+This is a runtime prototype, not a promise of static type-checker support for
+string-valued type parameters. DSPy state loading preserves the rubric when
+loading into an existing matching signature; JSON state alone does not recreate
+the type declaration. For custom numeric anchors, the existing float output plus
+`TypesafeFieldConfig(score_levels=...)` API remains available.
 Import order does not affect signature definitions, and the explicit predictor
 does not change DSPy's methods or field metadata registry. Avoid the decorator
 and `configure_typesafe()` if you do not want their opt-in global interception.

@@ -5,7 +5,7 @@ import logging
 import textwrap
 import time
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Mapping, Protocol, Sequence, get_args, get_origin
 
 import anyio.to_thread
@@ -19,6 +19,7 @@ from dspy.predict.predict import Predict, _get_type_name, _is_value_compatible_w
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature, make_signature
 from dspy.utils.constants import IS_TYPE_UNDEFINED
+from typesafe_dspy.score import Score
 
 logger = logging.getLogger(__name__)
 
@@ -495,8 +496,8 @@ def render_prediction_comparison(
 class TypesafePredict(Predict):
     """Resolve typed outputs with Typesafe, optionally rejecting all LM fallback.
 
-    Use strict=True for a TypeSafe-only predictor. levels maps float output names
-    to ordered descriptions, using the native zero-based Score scale.
+    Use strict=True for a TypeSafe-only predictor. Score[...] annotations carry
+    ordered descriptions, using the native zero-based Score scale.
     """
 
     def __init__(
@@ -506,31 +507,9 @@ class TypesafePredict(Predict):
         callbacks=None,
         *,
         strict: bool = False,
-        levels: Mapping[str, Sequence[str]] | None = None,
         **config,
     ) -> None:
         super().__init__(signature, callbacks=callbacks, **config)
-        if levels is not None:
-            if not isinstance(levels, Mapping):
-                raise ValueError("levels must map float output names to ordered descriptions.")
-            fields = dict(typesafe_config.field_configs)
-            existing = _merged_field_configs(self.signature, fields)
-            for name, descriptions in levels.items():
-                output = self.signature.output_fields.get(name)
-                if output is None or output.annotation is not float:
-                    raise ValueError(f"Field `{name}` must be a float output to configure levels.")
-                if name in existing:
-                    raise ValueError(f"Field `{name}` has both levels and an existing Typesafe override.")
-                if (
-                    isinstance(descriptions, str)
-                    or not isinstance(descriptions, Sequence)
-                    or len(descriptions) < 2
-                    or any(not isinstance(value, str) or not value.strip() for value in descriptions)
-                    or len(set(descriptions)) != len(descriptions)
-                ):
-                    raise ValueError(f"Field `{name}` requires at least two distinct nonempty level descriptions.")
-                fields[name] = TypesafeFieldConfig(kind="score", score_levels=dict(enumerate(descriptions)))
-            typesafe_config = replace(typesafe_config, field_configs=fields)
         self.strict = strict
         self.typesafe_config = typesafe_config
         self.prompt_factory = typesafe_config.prompt_factory or ImportedTypesafePromptFactory()
@@ -760,7 +739,7 @@ def _validate_strict_plan(plan: SignaturePlan, config: dict[str, Any]) -> None:
         if prompt.kind == "choice" and len(prompt.choice_options) < 2:
             raise ValueError(f"Field `{prompt.field_name}` requires at least two Choice options.")
         if prompt.kind == "score":
-            if output.annotation is not float:
+            if not isinstance(output.annotation, type) or not issubclass(output.annotation, float):
                 raise ValueError(f"Field `{prompt.field_name}` must be a float output for Score.")
             if len(prompt.score_levels) < 2:
                 raise ValueError(f"Field `{prompt.field_name}` requires at least two Score levels.")
@@ -901,6 +880,9 @@ def _evaluate_typesafe(
             probabilities_by_index,
         )
         probabilities = _score_probabilities_by_anchor(probabilities_by_index, prompt_plan.score_levels)
+        annotation = signature.output_fields[prompt_plan.field_name].annotation
+        if isinstance(annotation, type) and issubclass(annotation, Score):
+            score = annotation(score)
         resolved_outputs[prompt_plan.field_name] = score
         field_results[prompt_plan.field_name] = TypesafeFieldResult(
             kind="score",
@@ -1109,6 +1091,15 @@ def _build_prompt_plan(
     config: TypesafeFieldConfig | None,
 ) -> TypesafePromptPlan | None:
     config = config or TypesafeFieldConfig()
+    if isinstance(field.annotation, type) and issubclass(field.annotation, Score):
+        if config.kind not in (None, "score") or config.score_levels is not None or config.choice_options is not None:
+            raise ValueError(f"Field `{field_name}` has conflicting overrides for its Score annotation.")
+        return TypesafePromptPlan(
+            field_name=field_name,
+            kind="score",
+            instructions=config.instructions or _default_prompt_instructions(signature, field_name, field, "score"),
+            score_levels=dict(enumerate(field.annotation.levels)),
+        )
     kind = _resolve_kind(field.annotation, config)
     if kind is None or kind == "disable":
         return None
