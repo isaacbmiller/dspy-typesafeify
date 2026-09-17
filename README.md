@@ -112,6 +112,15 @@ For example, probabilities 0.1, 0.4, and 0.5 produce a numeric score of 6.3.
 Each output can use its own scale. Shorthand descriptions still mean 0, 1, 2, …;
 do not mix shorthand descriptions and explicit pairs in one rubric.
 
+Field descriptions are model-visible context, separate from the rubric levels.
+With the default request builders, `OutputField(desc=...)` is included at
+`questions[field].instructions.output_field.description`, alongside the signature
+instructions at `questions[field].instructions.task`. This applies to bool, Literal,
+and Score outputs. Input and output descriptions also appear in shared `state` at
+`signature.inputs[field].description` and `signature.outputs[field].description`.
+An explicit `TypesafeFieldConfig(instructions=...)` replaces that question's default
+instructions; the default shared state still includes its field description.
+
 This is a runtime prototype, not a promise of static type-checker support for
 string-valued type parameters. DSPy state loading preserves the rubric when
 loading into an existing matching signature; JSON state alone does not recreate

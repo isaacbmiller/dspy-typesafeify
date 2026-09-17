@@ -278,6 +278,41 @@ def test_explicit_score_uses_distribution_on_nonuniform_anchors(asynchronous):
     assert client.calls[0]["questions"]["severity"].levels == {1: "Low", 3: "Medium", 10: "Critical"}
 
 
+def test_field_descriptions_reach_question_instructions_and_shared_state():
+    class Review(dspy.Signature):
+        """Assess the incident report."""
+
+        report: str = dspy.InputField(desc="The reporter's observations, not verified facts.")
+        urgent: bool = dspy.OutputField(desc="Does this require immediate action?")
+        owner: Literal["support", "engineering"] = dspy.OutputField(desc="Which team should investigate?")
+        severity: Score["Cosmetic", "Blocking"] = dspy.OutputField(  # noqa: F821
+            desc="Rate functional impact, ignoring the reporter's tone."
+        )
+
+    client = FakeTypesafeClient(
+        FakeEvaluation(
+            nouls={"urgent": 0.9},
+            choices={"owner": {"choice": "option_1", "probabilities": {"option_0": 0.1, "option_1": 0.9}}},
+            scores={"severity": {"score": 0.8, "probabilities": {0: 0.2, 1: 0.8}}},
+        )
+    )
+    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
+    TypesafePredict(Review, config, strict=True)(report="Login fails.")
+    request = client.calls[0]
+    assert request["document"]["signature"]["inputs"]["report"]["description"] == (
+        "The reporter's observations, not verified facts."
+    )
+    for name, description in {
+        "urgent": "Does this require immediate action?",
+        "owner": "Which team should investigate?",
+        "severity": "Rate functional impact, ignoring the reporter's tone.",
+    }.items():
+        instructions = request["questions"][name].instructions
+        assert instructions["task"] == "Assess the incident report."
+        assert instructions["output_field"]["description"] == description
+        assert request["document"]["signature"]["outputs"][name]["description"] == description
+
+
 def test_strict_predict_rejects_residual_outputs_and_call_overrides_before_inference():
     client = FakeTypesafeClient(FakeEvaluation())
     config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
