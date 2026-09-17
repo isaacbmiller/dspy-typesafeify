@@ -99,10 +99,23 @@ Pydantic validation rejects nonfinite or out-of-range values, and the JSON schem
 includes the numeric range and level descriptions. Rubrics need at least two
 distinct, nonempty descriptions and cannot conflict with field overrides.
 
+To specify a different starting point or unequal spacing, use explicit anchors:
+
+```python
+severity: Score[(1, "Low"), (3, "Medium"), (10, "Critical")] = dspy.OutputField()
+```
+
+Anchors must be finite, strictly increasing numbers. Jev receives the ordered
+descriptions; the integration maps its probability distribution onto your anchors
+and returns their weighted mean, not a description string or the winning anchor.
+For example, probabilities 0.1, 0.4, and 0.5 produce a numeric score of 6.3.
+Each output can use its own scale. Shorthand descriptions still mean 0, 1, 2, …;
+do not mix shorthand descriptions and explicit pairs in one rubric.
+
 This is a runtime prototype, not a promise of static type-checker support for
 string-valued type parameters. DSPy state loading preserves the rubric when
 loading into an existing matching signature; JSON state alone does not recreate
-the type declaration. For custom numeric anchors, the existing float output plus
+the type declaration. The existing float output plus
 `TypesafeFieldConfig(score_levels=...)` API remains available.
 Import order does not affect signature definitions, and the explicit predictor
 does not change DSPy's methods or field metadata registry. Avoid the decorator

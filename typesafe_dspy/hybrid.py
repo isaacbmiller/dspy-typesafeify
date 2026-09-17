@@ -54,7 +54,7 @@ class PromptFactory(Protocol):
         self,
         *,
         instructions: JsonValue,
-        levels: Mapping[int, JsonValue],
+        levels: Mapping[float, JsonValue],
     ) -> Any:
         """Create a Typesafe Score question."""
 
@@ -94,7 +94,7 @@ class ImportedTypesafePromptFactory:
         self,
         *,
         instructions: JsonValue,
-        levels: Mapping[int, JsonValue],
+        levels: Mapping[float, JsonValue],
     ) -> Any:
         _, _, score_prompt = self._load()
         criteria = [description for _, description in sorted(levels.items())]
@@ -140,7 +140,7 @@ class TypesafePromptPlan:
     kind: Literal["noul", "choice", "score"]
     instructions: JsonValue
     choice_options: tuple[ChoiceOptionPlan, ...] = ()
-    score_levels: Mapping[int, JsonValue] = field(default_factory=dict)
+    score_levels: Mapping[float, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -916,8 +916,8 @@ def _build_prompt(prompt_factory: PromptFactory, prompt_plan: TypesafePromptPlan
 
 def _score_probabilities_by_anchor(
     probabilities: Mapping[int, float],
-    levels: Mapping[int, JsonValue],
-) -> Mapping[int, float]:
+    levels: Mapping[float, JsonValue],
+) -> Mapping[float, float]:
     anchors = sorted(levels)
     if all(index in probabilities for index in range(len(anchors))):
         return {
@@ -929,7 +929,7 @@ def _score_probabilities_by_anchor(
 
 def _score_expectation_on_configured_scale(
     score: float,
-    levels: Mapping[int, JsonValue],
+    levels: Mapping[float, JsonValue],
     probabilities: Mapping[int, float],
 ) -> float:
     """Preserve the configured numeric expectation across v1's positional scale."""
@@ -1098,7 +1098,7 @@ def _build_prompt_plan(
             field_name=field_name,
             kind="score",
             instructions=config.instructions or _default_prompt_instructions(signature, field_name, field, "score"),
-            score_levels=dict(enumerate(field.annotation.levels)),
+            score_levels=dict(field.annotation.levels),
         )
     kind = _resolve_kind(field.annotation, config)
     if kind is None or kind == "disable":

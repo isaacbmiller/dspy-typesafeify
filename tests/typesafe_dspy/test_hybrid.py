@@ -255,6 +255,29 @@ def test_strict_predict_with_levels_needs_neither_lm_nor_patching(asynchronous):
     assert field_args == DSPY_FIELD_ARG_NAMES
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_explicit_score_uses_distribution_on_nonuniform_anchors(asynchronous):
+    class Review(dspy.Signature):
+        text: str = dspy.InputField()
+        severity: Score[(1, "Low"), (3, "Medium"), (10, "Critical")] = dspy.OutputField()  # noqa: F821
+
+    client = FakeTypesafeClient(
+        FakeEvaluation(
+            scores={
+                "severity": {"score": 1.4, "probabilities": {"0": 0.1, "1": 0.4, "2": 0.5}},
+            }
+        )
+    )
+    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
+    predict = TypesafePredict(Review, config, strict=True)
+    result = asyncio.run(predict.acall(text="Evidence")) if asynchronous else predict(text="Evidence")
+    # The distribution gives 6.3; interpolating the native scalar 1.4 would give 5.8.
+    assert result.severity == pytest.approx(6.3)
+    assert isinstance(result.severity, Review.output_fields["severity"].annotation)
+    assert typesafe_results(result)["severity"].probabilities == {1: 0.1, 3: 0.4, 10: 0.5}
+    assert client.calls[0]["questions"]["severity"].levels == {1: "Low", 3: "Medium", 10: "Critical"}
+
+
 def test_strict_predict_rejects_residual_outputs_and_call_overrides_before_inference():
     client = FakeTypesafeClient(FakeEvaluation())
     config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())

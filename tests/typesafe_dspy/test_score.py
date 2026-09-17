@@ -58,3 +58,54 @@ def test_signature_transformations_preserve_each_score_rubric():
 def test_bare_score_is_not_an_unspecified_rubric():
     with pytest.raises(TypeError, match="at least two"):
         TypeAdapter(Score)
+
+
+def test_explicit_anchors_preserve_range_and_serialization():
+    severity = Score[(-1.5, "Low"), (3, "Medium"), (10, "Critical")]
+    value = severity(6.3)
+    adapter = TypeAdapter(severity)
+    assert adapter.dump_json(value) == b"6.3"
+    assert isinstance(adapter.validate_json("6.3"), severity)
+    for restored in (deepcopy(value), pickle.loads(pickle.dumps(value))):
+        assert type(restored) is severity
+        assert restored == 6.3
+    schema = adapter.json_schema()
+    assert (schema["minimum"], schema["maximum"]) == (-1.5, 10)
+    assert "-1.5: Low; 3: Medium; 10: Critical" in schema["description"]
+    for endpoint in (-1.5, 10):
+        assert adapter.validate_python(endpoint) == endpoint
+    for invalid in (-1.51, 10.01):
+        with pytest.raises(ValueError):
+            adapter.validate_python(invalid)
+
+
+@pytest.mark.parametrize(
+    "levels",
+    [
+        ((1, "Low"), (1, "High")),
+        ((5, "Low"), (1, "High")),
+        ((True, "Low"), (5, "High")),
+        ((float("nan"), "Low"), (5, "High")),
+        ((1, "Low"), (float("inf"), "High")),
+        ((1, "Low"), "High"),
+        ((1, "Low"), (5, "Low")),
+        ((1, "Low"), (5, "")),
+    ],
+)
+def test_invalid_explicit_anchors(levels):
+    with pytest.raises(ValueError):
+        Score[levels]
+
+
+def test_multiple_explicit_rubrics_survive_signature_transformations():
+    class Review(dspy.Signature):
+        text: str = dspy.InputField()
+        severity: Score[(1, "Low"), (3, "Medium"), (10, "Critical")] = dspy.OutputField()  # noqa: F821
+        sentiment: Score[(-1, "Negative"), (1, "Positive")] = dspy.OutputField()  # noqa: F821
+
+    updated = Review.with_instructions("Use evidence.")
+    restored = Review.load_state(json.loads(json.dumps(updated.dump_state())))
+    for signature in (Review, updated, restored):
+        plans = plan_signature(signature).prompt_plans
+        assert plans[0].score_levels == {1: "Low", 3: "Medium", 10: "Critical"}
+        assert plans[1].score_levels == {-1: "Negative", 1: "Positive"}
