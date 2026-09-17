@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Literal
@@ -220,6 +221,83 @@ def test_typesafe_predict_does_not_require_lm_for_fully_typesafe_signature():
 
     assert result.customer_impact is True
     assert result.owner == "api-platform"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_strict_predict_with_levels_needs_neither_lm_nor_patching(asynchronous):
+    from dspy.signatures.field import DSPY_FIELD_ARG_NAMES
+
+    class Review(dspy.Signature):
+        text: str = dspy.InputField()
+        supported: bool = dspy.OutputField()
+        relevance: float = dspy.OutputField()
+
+    methods = (dspy.Predict.forward, dspy.Predict.aforward, dspy.Predict._forward_preprocess)
+    field_args = list(DSPY_FIELD_ARG_NAMES)
+    client = FakeTypesafeClient(
+        FakeEvaluation(
+            nouls={"supported": 0.49},
+            scores={"relevance": {"score": 1.6, "probabilities": {"0": 0.1, "1": 0.2, "2": 0.7}}},
+        )
+    )
+    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
+    predict = TypesafePredict(Review, config, strict=True, levels={"relevance": ["Unrelated", "Partial", "Direct"]})
+    result = asyncio.run(predict.acall(text="Evidence")) if asynchronous else predict(text="Evidence")
+    assert result.supported is False
+    assert result.relevance == pytest.approx(1.6)
+    assert typesafe_results(result)["relevance"].probabilities == {0: 0.1, 1: 0.2, 2: 0.7}
+    assert len(client.calls) == 1
+    assert client.calls[0]["questions"]["relevance"].levels == {0: "Unrelated", 1: "Partial", 2: "Direct"}
+    assert config.field_configs == {}  # Constructor does not mutate shared configuration.
+    assert methods == (dspy.Predict.forward, dspy.Predict.aforward, dspy.Predict._forward_preprocess)
+    assert field_args == DSPY_FIELD_ARG_NAMES
+
+
+def test_strict_predict_rejects_residual_outputs_and_call_overrides_before_inference():
+    client = FakeTypesafeClient(FakeEvaluation())
+    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
+    for signature in ("text -> answer: str", "text -> supported: bool, score: float"):
+        with pytest.raises(ValueError, match="Unsupported outputs"):
+            TypesafePredict(signature, config, strict=True)
+    predict = TypesafePredict("text -> supported: bool", config, strict=True)
+    dspy.configure(lm=DummyLM([{"answer": "must not be used"}]))
+    with pytest.raises(ValueError, match="Unsupported outputs"):
+        predict(text="x", signature="text -> answer: str")
+    with pytest.raises(ValueError, match="generation options"):
+        predict(text="x", config={"temperature": 0.2})
+    assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    "levels",
+    [
+        [],
+        {"unknown": ["Low", "High"]},
+        {"text": ["Low", "High"]},
+        {"score": []},
+        {"score": ["Only"]},
+        {"score": "Low, High"},
+        {"score": ["Low", "Low"]},
+        {"score": ["Low", " "]},
+        {"score": ["Low", 2]},
+    ],
+)
+def test_invalid_levels_rejected_before_inference(levels):
+    client = FakeTypesafeClient(FakeEvaluation())
+    config = TypesafeConfig(client=client, model="jev-latest", prompt_factory=FakePromptFactory())
+    with pytest.raises(ValueError):
+        TypesafePredict("text -> score: float", config, strict=True, levels=levels)
+    assert client.calls == []
+
+
+def test_levels_reject_conflicting_configuration():
+    config = TypesafeConfig(
+        client=FakeTypesafeClient(FakeEvaluation()),
+        model="jev-latest",
+        field_configs={"score": TypesafeFieldConfig(kind="score", score_levels={1: "Low", 5: "High"})},
+    )
+    with pytest.raises(ValueError, match="existing Typesafe override"):
+        TypesafePredict("text -> score: float", config, levels={"score": ["Low", "High"]})
 
 
 def test_enable_typesafe_wraps_existing_predictors():

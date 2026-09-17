@@ -5,7 +5,7 @@ import logging
 import textwrap
 import time
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Literal, Mapping, Protocol, Sequence, get_args, get_origin
 
 import anyio.to_thread
@@ -493,19 +493,50 @@ def render_prediction_comparison(
 
 
 class TypesafePredict(Predict):
-    """Resolve supported typed outputs with Typesafe before falling back to DSPy."""
+    """Resolve typed outputs with Typesafe, optionally rejecting all LM fallback.
+
+    Use strict=True for a TypeSafe-only predictor. levels maps float output names
+    to ordered descriptions, using the native zero-based Score scale.
+    """
 
     def __init__(
         self,
         signature: str | type[Signature],
         typesafe_config: TypesafeConfig,
         callbacks=None,
+        *,
+        strict: bool = False,
+        levels: Mapping[str, Sequence[str]] | None = None,
         **config,
     ) -> None:
         super().__init__(signature, callbacks=callbacks, **config)
+        if levels is not None:
+            if not isinstance(levels, Mapping):
+                raise ValueError("levels must map float output names to ordered descriptions.")
+            fields = dict(typesafe_config.field_configs)
+            existing = _merged_field_configs(self.signature, fields)
+            for name, descriptions in levels.items():
+                output = self.signature.output_fields.get(name)
+                if output is None or output.annotation is not float:
+                    raise ValueError(f"Field `{name}` must be a float output to configure levels.")
+                if name in existing:
+                    raise ValueError(f"Field `{name}` has both levels and an existing Typesafe override.")
+                if (
+                    isinstance(descriptions, str)
+                    or not isinstance(descriptions, Sequence)
+                    or len(descriptions) < 2
+                    or any(not isinstance(value, str) or not value.strip() for value in descriptions)
+                    or len(set(descriptions)) != len(descriptions)
+                ):
+                    raise ValueError(f"Field `{name}` requires at least two distinct nonempty level descriptions.")
+                fields[name] = TypesafeFieldConfig(kind="score", score_levels=dict(enumerate(descriptions)))
+            typesafe_config = replace(typesafe_config, field_configs=fields)
+        self.strict = strict
         self.typesafe_config = typesafe_config
         self.prompt_factory = typesafe_config.prompt_factory or ImportedTypesafePromptFactory()
         self.document_builder = typesafe_config.document_builder or default_document_builder
+        if strict:
+            _validate_strict_plan(self.plan_signature(), self.config)
 
     @classmethod
     def from_predictor(
@@ -520,6 +551,7 @@ class TypesafePredict(Predict):
             predictor.signature,
             typesafe_config=typesafe_config,
             callbacks=getattr(predictor, "callbacks", None),
+            strict=getattr(predictor, "strict", False),
             **predictor.config,
         )
         wrapped.lm = predictor.lm
@@ -698,6 +730,9 @@ def _prepare_hybrid_call(
     merged_field_configs = {**typesafe_config.field_configs, **_merged_field_configs(signature, None)}
     plan = plan_signature(signature, field_configs=merged_field_configs)
 
+    if getattr(predictor, "strict", False):
+        _validate_strict_plan(plan, config)
+
     if plan.requires_dspy:
         _configure_residual_dspy(lm, config)
 
@@ -708,6 +743,27 @@ def _prepare_hybrid_call(
     _warn_for_missing_inputs(signature, kwargs)
 
     return lm, config, signature, demos, kwargs, plan
+
+
+def _validate_strict_plan(plan: SignaturePlan, config: dict[str, Any]) -> None:
+    if config:
+        raise ValueError("Strict TypesafePredict does not support LM generation options.")
+    if not plan.prompt_plans or plan.remaining_output_names:
+        raise ValueError(
+            f"Strict TypesafePredict requires every output to be handled by Typesafe. "
+            f"Unsupported outputs: {list(plan.remaining_output_names)}"
+        )
+    for prompt in plan.prompt_plans:
+        output = plan.original_signature.output_fields[prompt.field_name]
+        if output.metadata:
+            raise ValueError(f"Field `{prompt.field_name}` has unsupported output constraints.")
+        if prompt.kind == "choice" and len(prompt.choice_options) < 2:
+            raise ValueError(f"Field `{prompt.field_name}` requires at least two Choice options.")
+        if prompt.kind == "score":
+            if output.annotation is not float:
+                raise ValueError(f"Field `{prompt.field_name}` must be a float output for Score.")
+            if len(prompt.score_levels) < 2:
+                raise ValueError(f"Field `{prompt.field_name}` requires at least two Score levels.")
 
 
 def _configure_residual_dspy(lm: BaseLM | str | None, config: dict[str, Any]) -> None:
@@ -837,12 +893,14 @@ def _evaluate_typesafe(
             continue
 
         response = evaluation.answers[prompt_plan.field_name]
+        # JSON object keys are strings; SDK versions may expose integer indices.
+        probabilities_by_index = {int(index): value for index, value in response.probabilities.items()}
         score = _score_expectation_on_configured_scale(
             response.score,
             prompt_plan.score_levels,
-            response.probabilities,
+            probabilities_by_index,
         )
-        probabilities = _score_probabilities_by_anchor(response.probabilities, prompt_plan.score_levels)
+        probabilities = _score_probabilities_by_anchor(probabilities_by_index, prompt_plan.score_levels)
         resolved_outputs[prompt_plan.field_name] = score
         field_results[prompt_plan.field_name] = TypesafeFieldResult(
             kind="score",

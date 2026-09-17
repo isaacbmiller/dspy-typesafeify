@@ -60,6 +60,47 @@ that both signatures have identical fields and instructions.
 
 ## Run the comparison
 
+### Explicit TypeSafe-only prediction without monkey-patching
+
+Use `TypesafePredict` directly when every output should come from TypeSafe.
+This path does not require `configure_typesafe()`, `install()`, a decorator, or
+a configured DSPy LM. `strict=True` rejects outputs that would require an LM,
+including an unconfigured numeric output, before any inference call. The default
+remains hybrid execution for existing callers.
+
+```python
+import dspy
+from typesafe_sdk import TypeSafeClient
+from typesafe_dspy import TypesafeConfig, TypesafePredict, typesafe_results
+
+class Review(dspy.Signature):
+    """Evaluate the evidence in the passage."""
+    passage: str = dspy.InputField()
+    supported: bool = dspy.OutputField(desc="Does the passage support its claim?")
+    relevance: float = dspy.OutputField(desc="How relevant is the evidence to the claim?")
+
+predict = TypesafePredict(
+    Review,
+    typesafe_config=TypesafeConfig(client=TypeSafeClient(), model="jev-latest"),
+    strict=True,
+    levels={"relevance": ["Unrelated", "Partial evidence", "Direct evidence"]},
+)
+result = predict(passage="...")
+score = result.relevance
+probabilities = typesafe_results(result)["relevance"].probabilities
+```
+
+`levels` belongs to the predictor, not `OutputField`. It defines ordered Score
+descriptions with zero-based numeric anchors: this example returns a float in
+0–2, including intermediate values such as 1.6. It requires at least two distinct,
+nonempty descriptions and cannot conflict with a field override. For custom
+numeric anchors, use the existing `TypesafeFieldConfig(score_levels=...)` API.
+Import order does not affect signature definitions, and the explicit predictor
+does not change DSPy's methods or field metadata registry. Avoid the decorator
+and `configure_typesafe()` if you do not want their opt-in global interception.
+
+### Hybrid comparison demo
+
 Install the published Typesafe SDK and this fork's development dependencies:
 
 ```bash
